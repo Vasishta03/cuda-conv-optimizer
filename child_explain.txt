@@ -1,0 +1,75 @@
+    A GPU is like having thousands of tiny workers instead of one. Each worker
+    handles one pixel at a time, all simultaneously. But here's the problem — even   
+    with thousands of workers, they all kept running to a faraway storage room to    
+    grab the pixel values they needed, over and over again, even when two workers    
+    needed the same pixel.   
+    
+    What this project does:                                                          
+                                                                                     
+    We tried two tricks to fix that:                                                 
+                                                                                     
+    1. Shared Memory Tiling — Instead of every worker running to the far storage     
+    room, we first copy a small chunk of the photo into a nearby mini-fridge (shared
+    memory). Now all the workers grab from the mini-fridge instead. Way faster.
+    
+    2. Separable Kernels — Instead of doing one big 2D blur (look at all neighbours
+    in a square), we split it into two quick 1D blurs — first blur left-right across
+    every row, then blur up-down across every column. Same result, but you do far
+    less work.
+
+    What we found:
+
+    - The GPU alone is already ~500× faster than the CPU
+    - Trick 1 (tiling) makes it ~1.6× faster on top of that
+    - Trick 2 (separable) makes it up to 8,400× faster than the CPU for big blurs
+    - Interestingly, for tiny 3×3 blurs, the tricks actually slow things down
+    slightly — the overhead of setting up the mini-fridge isn't worth it when the job
+     is already tiny
+
+    That's it. Fast blurring. GPU go brrr.
+    
+    
+  1. Built and ran the project on your actual RTX 4070 Laptop GPU (CUDA 12.4):       
+  make ARCH=sm_89 && ./conv_bench                                                    
+  All 64 test configurations (4 resolutions × 4 radii × 4 methods) ran successfully  
+  with zero errors.                                                                  
+                                                                                     
+  2. Key findings from the real run:                                                 
+                                                                                     
+  ┌──────────────────────────┬─────────────────────────────────────────────┐       
+  │        Highlight         │                   Result                    │         
+  ├──────────────────────────┼─────────────────────────────────────────────┤       
+  │ Biggest speedup over CPU │ 8495× — Separable, r=15, 2048×2048          │        
+  ├──────────────────────────┼─────────────────────────────────────────────┤
+  │ Tiled vs Naive max gain  │ 1.74× at r=15                               │         
+  ├──────────────────────────┼─────────────────────────────────────────────┤         
+  │ Naive beats Tiled        │ At r=1 (small kernel — not worth tiling)    │         
+  ├──────────────────────────┼─────────────────────────────────────────────┤         
+  │ Separable slowest at r=1 │ Two kernel launches dominate tiny workloads │        
+  ├──────────────────────────┼─────────────────────────────────────────────┤         
+  │ All correctness checks   │ ✓ passed (max error < 10⁻³)                 │       
+  └──────────────────────────┴─────────────────────────────────────────────┘    
+  
+  - What's convolution? Imagine you have a photo and you want to blur it. You look at
+   each pixel and average it with its neighbours. That averaging is called           
+  convolution. You do it for every single pixel in the image.                        
+  - Why GPU? A photo has millions of pixels. Doing them one by one on a CPU is slow. 
+  A GPU can do thousands at once — like having thousands of tiny workers all blurring
+   different pixels simultaneously.                                                 
+  - Problem with the simple GPU version (Naive): Even on the GPU, the naive approach 
+  has a problem — every worker keeps going back to the same slow storage (global     
+  memory) to fetch the same pixel data over and over again. It's like 64 people each
+  walking to the fridge to get the same ingredient instead of one person bringing it 
+  to the table.                                                                    
+  - Fix 1 — Tiling: We make each group of workers (a thread block) bring their shared
+   ingredients into a small fast table (shared memory) once, then everyone uses that.
+   This is 1.3–1.7× faster than naive for large kernels.
+  - Fix 2 — Separable Kernel: Instead of doing a 2D blur in one shot (e.g. a 31×31 = 
+  961 operations per pixel), we do it in two 1D passes — blur left-right, then blur  
+  up-down (31+31 = 62 operations per pixel). Way less work. This makes it up to 8495×
+   faster than the CPU for the biggest kernel tested.                                
+  - Surprising find: For tiny kernels (3×3), the naive GPU was actually faster than
+  tiled — the overhead of organising shared memory isn't worth it when there's so    
+  little data to share.
+  - All results correct: Every GPU result was checked against the CPU — max error was
+   less than 0.001, which is just floating-point rounding noise.
