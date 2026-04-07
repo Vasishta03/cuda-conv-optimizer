@@ -156,7 +156,7 @@ para('Under the Guidance of:', WD_ALIGN_PARAGRAPH.CENTER, 12, bold=True, sb=0, s
 para('Vidya Kamath', WD_ALIGN_PARAGRAPH.CENTER, 14, bold=True, sb=0, sa=3)
 para('Assistant Professor', WD_ALIGN_PARAGRAPH.CENTER, 12, sb=0, sa=3)
 para('School of Computer Engineering', WD_ALIGN_PARAGRAPH.CENTER, 12, sb=0, sa=3)
-para('Manipal Institute of Technology, Manipal, Karnataka \u2013 576104', WD_ALIGN_PARAGRAPH.CENTER, 12, sb=0, sa=3)
+para('Manipal Institute of Technology, Manipal, Karnataka - 576104', WD_ALIGN_PARAGRAPH.CENTER, 12, sb=0, sa=3)
 doc.add_page_break()
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -180,7 +180,7 @@ para(
     "Tests span four kernel radii (r \u2208 {1, 3, 7, 15}) and four image resolutions "
     "(256\u00d7256 to 2048\u00d72048). "
     "The tiled kernel achieves up to 1.74\u00d7 better throughput than the naive kernel for the same "
-    "kernel size, while the separable kernel yields the largest end-to-end speedups\u2014reaching "
+    "kernel size, while the separable kernel yields the largest end-to-end speedups, reaching "
     "8495\u00d7 over the CPU reference at the widest kernel and largest image tested. "
     "All three GPU implementations were verified to produce numerically correct results within "
     "floating-point tolerance across every test configuration."
@@ -214,8 +214,8 @@ para(
 )
 para(
     "Two widely studied techniques address this problem. Shared-memory tiling arranges "
-    "threads within a block to load a contiguous tile of input data\u2014including a "
-    "border region wide enough to cover the kernel overlap\u2014into shared memory before "
+    "threads within a block to load a contiguous tile of input data, including a "
+    "border region wide enough to cover the kernel overlap, into shared memory before "
     "any arithmetic is performed, so that the expensive global reads happen only once per tile. "
     "Separable kernel decomposition exploits the fact that certain important kernels (Gaussian, "
     "box, binomial) factor into the outer product of two 1-D vectors, enabling the single "
@@ -280,7 +280,7 @@ para(
     "Consider a 16\u00d716 output tile processed by a single thread block. With a 15\u00d715 kernel "
     "(r = 7) each of the 256 threads requires 225 input values, for a total of 57,600 global "
     "memory reads per block. Yet the unique inputs needed cover only a 30\u00d730 = 900-element "
-    "apron region\u2014meaning the same data is read an average of 64 times from slow DRAM."
+    "apron region, meaning the same data is read an average of 64 times from slow DRAM."
 )
 para(
     "The degree of inefficiency is characterised by arithmetic intensity (AI), the ratio of "
@@ -321,7 +321,7 @@ para(
 )
 sec_h('3.3', 'Separable Kernel Decomposition')
 para(
-    "Implement a two-pass separable pipeline\u2014horizontal then vertical\u2014each pass "
+    "Implement a two-pass separable pipeline (horizontal then vertical), each pass "
     "independently tiled in shared memory. Use the decomposition to reduce per-pixel arithmetic "
     "from O(K\u00b2) to O(2K) and verify the result matches the 2-D reference."
 )
@@ -420,7 +420,7 @@ para(
 sec_h('5.4', 'Border Handling')
 para(
     "Out-of-bounds coordinates are clamped to the nearest valid pixel using "
-    "min(max(index, 0), size\u22121) (border-replicate / BORDER_REPLICATE in OpenCV terminology). "
+    "min(max(index, 0), size-1) (border-replicate / BORDER_REPLICATE in OpenCV terminology). "
     "The clamping is applied during the shared-memory load phase for tiled kernels so that "
     "the arithmetic phase reads only from shared memory with no per-pixel branching."
 )
@@ -428,7 +428,7 @@ para(
 sec_h('5.5', 'Gaussian Kernel Generation')
 para(
     "For each tested radius r the 1-D Gaussian kernel h is computed as "
-    "h[k] = exp(\u2212(k\u2212r)\u00b2 / (2\u03c3\u00b2)), with \u03c3 = r/2, "
+    "h[k] = exp(-(k-r)\u00b2 / (2\u03c3\u00b2)), with \u03c3 = r/2, "
     "and normalised to unit sum. The 2-D kernel is the outer product H[i][j] = h[i]\u00b7h[j], "
     "also normalised. The same h is used for both passes of the separable kernel."
 )
@@ -529,12 +529,12 @@ para(
     "The separable pipeline runs two separate kernel launches. The horizontal kernel loads "
     "TILE_H rows, each padded with r elements on each side, into shared memory and convolves "
     "every row with the 1-D filter h, writing results to an intermediate device buffer d_temp. "
-    "The vertical kernel then loads columns from d_temp\u2014each padded with r elements above "
-    "and below\u2014and applies h along the column direction."
+    "The vertical kernel then loads columns from d_temp, each padded with r elements above "
+    "and below, and applies h along the column direction."
 )
 para(
     "The index arithmetic for the horizontal pass is: smem[ty * smW + tx + k] corresponds to "
-    "input pixel at column (outCol \u2212 r + k) in row outRow, so the 1-D sum "
+    "input pixel at column (outCol - r + k) in row outRow, so the 1-D sum "
     "\u03a3 smem[ty*smW + tx + k] \u00b7 h[k] reproduces the correct row convolution. "
     "An identical argument applies to the vertical pass with rows replacing columns."
 )
@@ -560,7 +560,7 @@ para(
     "for every tested configuration."
 )
 
-para("Table 6.1   Full Benchmark Results \u2014 All Resolutions and Kernel Radii",
+para("Table 6.1   Full Benchmark Results: All Resolutions and Kernel Radii",
      WD_ALIGN_PARAGRAPH.CENTER, 11, bold=True, sb=8, sa=4)
 
 # All real data
@@ -568,70 +568,70 @@ tbl(
     ['Resolution', 'Method', 'r', 'Time (ms)', 'BW (GB/s)', 'GFLOP/s', 'CPU Speedup'],
     [
         # 256x256
-        ('256\u00d7256','CPU Reference',  1, '0.673',  '\u2014',   '1.75',    '1.00\u00d7'),
+        ('256\u00d7256','CPU Reference',  1, '0.673',  '-',   '1.75',    '1.00\u00d7'),
         ('256\u00d7256','Naive GPU',       1, '0.005',  '104.5',  '235.1',  '134.0\u00d7'),
         ('256\u00d7256','Tiled GPU',       1, '0.006',   '91.4',  '205.7',  '117.3\u00d7'),
         ('256\u00d7256','Separable GPU',   1, '0.013',   '40.3',   '60.5',   '51.7\u00d7'),
-        ('256\u00d7256','CPU Reference',   3, '2.678',  '\u2014',   '2.40',    '1.00\u00d7'),
+        ('256\u00d7256','CPU Reference',   3, '2.678',  '-',   '2.40',    '1.00\u00d7'),
         ('256\u00d7256','Naive GPU',       3, '0.010',   '50.7',  '621.0',  '258.9\u00d7'),
         ('256\u00d7256','Tiled GPU',       3, '0.008',   '62.4',  '764.9',  '318.9\u00d7'),
         ('256\u00d7256','Separable GPU',   3, '0.013',   '39.7',  '138.9',  '202.7\u00d7'),
-        ('256\u00d7256','CPU Reference',   7,'11.189',  '\u2014',   '2.64',    '1.00\u00d7'),
+        ('256\u00d7256','CPU Reference',   7,'11.189',  '-',   '2.64',    '1.00\u00d7'),
         ('256\u00d7256','Naive GPU',       7, '0.030',   '17.4',  '976.4',  '370.4\u00d7'),
         ('256\u00d7256','Tiled GPU',       7, '0.020',   '26.0', '1461.9',  '554.7\u00d7'),
         ('256\u00d7256','Separable GPU',   7, '0.014',   '36.3',  '272.3',  '775.0\u00d7'),
-        ('256\u00d7256','CPU Reference',  15,'48.948',  '\u2014',   '2.57',    '1.00\u00d7'),
+        ('256\u00d7256','CPU Reference',  15,'48.948',  '-',   '2.57',    '1.00\u00d7'),
         ('256\u00d7256','Naive GPU',      15, '0.113',    '4.6', '1111.2',  '431.8\u00d7'),
         ('256\u00d7256','Tiled GPU',      15, '0.072',    '7.3', '1759.8',  '683.8\u00d7'),
         ('256\u00d7256','Separable GPU',  15, '0.016',   '31.8',  '492.9', '2969.0\u00d7'),
         # 512x512
-        ('512\u00d7512','CPU Reference',   1, '2.699',  '\u2014',   '1.75',    '1.00\u00d7'),
+        ('512\u00d7512','CPU Reference',   1, '2.699',  '-',   '1.75',    '1.00\u00d7'),
         ('512\u00d7512','Naive GPU',        1, '0.009',  '235.4',  '529.7',  '303.0\u00d7'),
         ('512\u00d7512','Tiled GPU',        1, '0.010',  '203.3',  '457.4',  '261.6\u00d7'),
         ('512\u00d7512','Separable GPU',    1, '0.018',  '114.5',  '171.7',  '147.3\u00d7'),
-        ('512\u00d7512','CPU Reference',    3,'10.641',  '\u2014',   '2.41',    '1.00\u00d7'),
+        ('512\u00d7512','CPU Reference',    3,'10.641',  '-',   '2.41',    '1.00\u00d7'),
         ('512\u00d7512','Naive GPU',        3, '0.026',   '80.0',  '980.0',  '405.9\u00d7'),
         ('512\u00d7512','Tiled GPU',        3, '0.020',  '104.5', '1280.0',  '530.2\u00d7'),
         ('512\u00d7512','Separable GPU',    3, '0.020',  '106.2',  '371.6',  '538.7\u00d7'),
-        ('512\u00d7512','CPU Reference',    7,'44.775',  '\u2014',   '2.63',    '1.00\u00d7'),
+        ('512\u00d7512','CPU Reference',    7,'44.775',  '-',   '2.63',    '1.00\u00d7'),
         ('512\u00d7512','Naive GPU',        7, '0.097',   '21.7', '1220.3',  '463.2\u00d7'),
         ('512\u00d7512','Tiled GPU',        7, '0.061',   '34.2', '1926.4',  '731.2\u00d7'),
         ('512\u00d7512','Separable GPU',    7, '0.023',   '91.0',  '682.7', '1943.4\u00d7'),
-        ('512\u00d7512','CPU Reference',   15,'194.12',  '\u2014',   '2.60',    '1.00\u00d7'),
+        ('512\u00d7512','CPU Reference',   15,'194.12',  '-',   '2.60',    '1.00\u00d7'),
         ('512\u00d7512','Naive GPU',       15, '0.418',    '5.0', '1205.1',  '464.3\u00d7'),
         ('512\u00d7512','Tiled GPU',       15, '0.240',    '8.7', '2097.3',  '808.1\u00d7'),
         ('512\u00d7512','Separable GPU',   15, '0.052',   '40.2',  '622.4', '3717.1\u00d7'),
         # 1024x1024
-        ('1024\u00d71024','CPU Reference',  1, '10.706',  '\u2014',   '1.76',    '1.00\u00d7'),
+        ('1024\u00d71024','CPU Reference',  1, '10.706',  '-',   '1.76',    '1.00\u00d7'),
         ('1024\u00d71024','Naive GPU',       1,  '0.025',  '341.3',  '768.0',  '435.6\u00d7'),
         ('1024\u00d71024','Tiled GPU',       1,  '0.035',  '237.4',  '534.3',  '303.0\u00d7'),
         ('1024\u00d71024','Separable GPU',   1,  '0.042',  '198.8',  '298.3',  '253.8\u00d7'),
-        ('1024\u00d71024','CPU Reference',   3, '42.527',  '\u2014',   '2.42',    '1.00\u00d7'),
+        ('1024\u00d71024','CPU Reference',   3, '42.527',  '-',   '2.42',    '1.00\u00d7'),
         ('1024\u00d71024','Naive GPU',       3,  '0.091',   '92.1', '1128.8',  '467.2\u00d7'),
         ('1024\u00d71024','Tiled GPU',       3,  '0.067',  '125.5', '1536.8',  '636.0\u00d7'),
         ('1024\u00d71024','Separable GPU',   3,  '0.048',  '173.2',  '606.2',  '878.0\u00d7'),
-        ('1024\u00d71024','CPU Reference',   7,'184.220',  '\u2014',   '2.56',    '1.00\u00d7'),
+        ('1024\u00d71024','CPU Reference',   7,'184.220',  '-',   '2.56',    '1.00\u00d7'),
         ('1024\u00d71024','Naive GPU',       7,  '0.367',   '22.9', '1285.4',  '501.8\u00d7'),
         ('1024\u00d71024','Tiled GPU',       7,  '0.228',   '36.8', '2068.2',  '807.5\u00d7'),
         ('1024\u00d71024','Separable GPU',   7,  '0.063',  '133.6', '1002.3', '2934.8\u00d7'),
-        ('1024\u00d71024','CPU Reference',  15,'779.465',  '\u2014',   '2.59',    '1.00\u00d7'),
+        ('1024\u00d71024','CPU Reference',  15,'779.465',  '-',   '2.59',    '1.00\u00d7'),
         ('1024\u00d71024','Naive GPU',      15,  '1.495',    '5.6', '1348.1',  '521.4\u00d7'),
         ('1024\u00d71024','Tiled GPU',      15,  '0.927',    '9.1', '2174.3',  '840.9\u00d7'),
         ('1024\u00d71024','Separable GPU',  15,  '0.092',   '90.9', '1409.3', '8448.4\u00d7'),
         # 2048x2048
-        ('2048\u00d72048','CPU Reference',  1, '43.268',  '\u2014',   '1.74',    '1.00\u00d7'),
+        ('2048\u00d72048','CPU Reference',  1, '43.268',  '-',   '1.74',    '1.00\u00d7'),
         ('2048\u00d72048','Naive GPU',       1,  '0.090',  '374.5',  '842.6',  '482.9\u00d7'),
         ('2048\u00d72048','Tiled GPU',       1,  '0.116',  '290.2',  '653.0',  '374.3\u00d7'),
         ('2048\u00d72048','Separable GPU',   1,  '0.268',  '125.3',  '188.0',  '161.6\u00d7'),
-        ('2048\u00d72048','CPU Reference',   3,'170.698',  '\u2014',   '2.41',    '1.00\u00d7'),
+        ('2048\u00d72048','CPU Reference',   3,'170.698',  '-',   '2.41',    '1.00\u00d7'),
         ('2048\u00d72048','Naive GPU',       3,  '0.352',   '95.4', '1168.6',  '485.3\u00d7'),
         ('2048\u00d72048','Tiled GPU',       3,  '0.257',  '130.7', '1601.2',  '664.9\u00d7'),
         ('2048\u00d72048','Separable GPU',   3,  '0.317',  '105.8',  '370.3',  '538.3\u00d7'),
-        ('2048\u00d72048','CPU Reference',   7,'737.687',  '\u2014',   '2.56',    '1.00\u00d7'),
+        ('2048\u00d72048','CPU Reference',   7,'737.687',  '-',   '2.56',    '1.00\u00d7'),
         ('2048\u00d72048','Naive GPU',       7,  '1.450',   '23.1', '1301.3',  '508.6\u00d7'),
         ('2048\u00d72048','Tiled GPU',       7,  '0.900',   '37.3', '2096.5',  '819.4\u00d7'),
         ('2048\u00d72048','Separable GPU',   7,  '0.276',  '121.7',  '912.9', '2676.1\u00d7'),
-        ('2048\u00d72048','CPU Reference',  15,'3101.35',  '\u2014',   '2.60',    '1.00\u00d7'),
+        ('2048\u00d72048','CPU Reference',  15,'3101.35',  '-',   '2.60',    '1.00\u00d7'),
         ('2048\u00d72048','Naive GPU',      15,  '6.095',    '5.5', '1322.6',  '508.8\u00d7'),
         ('2048\u00d72048','Tiled GPU',      15,  '3.682',    '9.1', '2189.3',  '842.2\u00d7'),
         ('2048\u00d72048','Separable GPU',  15,  '0.365',   '91.9', '1424.7', '8495.5\u00d7'),
@@ -653,7 +653,7 @@ para(
     "modest while the shared-memory load overhead is unchanged. The separable kernel is slowest "
     "here because two kernel launches carry a fixed dispatch overhead that dominates at this "
     "arithmetic intensity. Effective bandwidth for the naive kernel reaches 374 GB/s on 2048\u00d72048, "
-    "corresponding to 146% of the 256 GB/s peak\u2014consistent with L2 cache hits contributing "
+    "corresponding to 146% of the 256 GB/s peak, consistent with L2 cache hits contributing "
     "to the apparent bandwidth."
 )
 
@@ -739,14 +739,14 @@ para('REFERENCES', WD_ALIGN_PARAGRAPH.CENTER, 15, bold=True, sb=12, sa=12)
 refs = [
     "V. Podlozhnyuk, \u201cImage Convolution with CUDA,\u201d NVIDIA GPU Computing SDK White Paper, NVIDIA Corporation, Santa Clara, CA, USA, 2007.",
     "D. B. Kirk and W. W. Hwu, Programming Massively Parallel Processors: A Hands-on Approach, 4th ed. Morgan Kaufmann / Elsevier, Waltham, MA, USA, 2022.",
-    "P. Getreuer, \u201cA Survey of Gaussian Convolution Algorithms,\u201d Image Processing On Line, vol. 3, pp. 286\u2013310, Nov. 2013. doi: 10.5201/ipol.2013.87.",
-    "S. Hong, H. Kim, and J. Lee, \u201cWarp-Level Primitives for Efficient Reduction and Convolution on NVIDIA Ampere GPUs,\u201d in Proc. IEEE IPDPS, Lyon, France, May 2023, pp. 614\u2013624.",
+    "P. Getreuer, \u201cA Survey of Gaussian Convolution Algorithms,\u201d Image Processing On Line, vol. 3, pp. 286-310, Nov. 2013. doi: 10.5201/ipol.2013.87.",
+    "S. Hong, H. Kim, and J. Lee, \u201cWarp-Level Primitives for Efficient Reduction and Convolution on NVIDIA Ampere GPUs,\u201d in Proc. IEEE IPDPS, Lyon, France, May 2023, pp. 614-624.",
     "N. Vasilache et al., \u201cTensor Comprehensions: Framework-Agnostic High-Performance Machine Learning Abstractions,\u201d arXiv preprint arXiv:1802.04730, Feb. 2018.",
     "S. Chetlur et al., \u201ccuDNN: Efficient Primitives for Deep Learning,\u201d arXiv preprint arXiv:1410.0759, Oct. 2014.",
     "NVIDIA Corporation, CUDA C++ Programming Guide, Version 12.4, Santa Clara, CA, USA, 2024.",
-    "W. Luk and T. Voss, \u201cOptimising Convolution Operations on FPGAs and GPUs Using Roofline-Guided Design,\u201d in Proc. IEEE FPT, Tianjin, China, Dec. 2022, pp. 1\u20138.",
-    "S. Williams, A. Waterman, and D. Patterson, \u201cRoofline: An Insightful Visual Performance Model for Multicore Architectures,\u201d Commun. ACM, vol. 52, no. 4, pp. 65\u201376, Apr. 2009.",
-    "G. Bradski, \u201cThe OpenCV Library,\u201d Dr. Dobb\u2019s Journal of Software Tools, vol. 25, pp. 120\u2013125, Nov. 2000.",
+    "W. Luk and T. Voss, \u201cOptimising Convolution Operations on FPGAs and GPUs Using Roofline-Guided Design,\u201d in Proc. IEEE FPT, Tianjin, China, Dec. 2022, pp. 1-8.",
+    "S. Williams, A. Waterman, and D. Patterson, \u201cRoofline: An Insightful Visual Performance Model for Multicore Architectures,\u201d Commun. ACM, vol. 52, no. 4, pp. 65-76, Apr. 2009.",
+    "G. Bradski, \u201cThe OpenCV Library,\u201d Dr. Dobb\u2019s Journal of Software Tools, vol. 25, pp. 120-125, Nov. 2000.",
 ]
 for i, ref in enumerate(refs, 1):
     p = doc.add_paragraph()
