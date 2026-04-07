@@ -1,5 +1,5 @@
 """
-generate_report.py  —  Final Project Report (DOCX + PDF)
+generate_report.py  -  Final Project Report (DOCX + PDF)
 Real benchmark data: NVIDIA GeForce RTX 4070 Laptop GPU, CUDA 12.4, April 2026
 """
 
