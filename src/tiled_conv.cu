@@ -19,7 +19,6 @@ __global__ void tiledConvKernel(
     int baseRow = (int)(blockIdx.y * TILE_H) - halo;
     int baseCol = (int)(blockIdx.x * TILE_W) - halo;
 
-    // load tile + halo into shared memory
     for (int dy = ty; dy < smH; dy += TILE_H) {
         for (int dx = tx; dx < smW; dx += TILE_W) {
             int r = min(max(baseRow + dy, 0), height - 1);

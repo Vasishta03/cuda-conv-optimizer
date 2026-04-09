@@ -1,147 +1,185 @@
 # CUDA Image Convolution Optimizer
 
-Benchmarking shared-memory tiling and separable kernel decomposition against a naive GPU implementation for 2-D image convolution — tested on an NVIDIA RTX 4070 Laptop GPU.
+**Semester VI Mini-Project -- Parallel Computing and Architecture (PCAP)**
+Manipal Institute of Technology, Manipal
+
+**Team**
+| Name | Reg. No. |
+|------|----------|
+| Vasishta Nandipati | 230962095 |
+| Rishit Mathur | 220962091 |
+| Krishiv Kolanu | 230962023 |
+
+**Guide:** Vidya Kamath, Assistant Professor, School of Computer Engineering
 
 ---
 
 ## Overview
 
-Image convolution is at the core of Gaussian blur, edge detection, and CNN layers. A naive CUDA kernel reads the same input pixel from global memory up to K² times per output pixel, making it heavily memory-bandwidth bound. This project implements and benchmarks two optimisations:
+This project implements and benchmarks three approaches to 2-D image convolution on an NVIDIA GPU using CUDA C, demonstrating how on-chip shared memory and algorithmic decomposition can dramatically reduce memory bandwidth pressure and improve throughput compared to a naive implementation.
 
-- **Shared-memory tiling** — loads each tile (including a halo border) into on-chip SRAM once per block, eliminating redundant global memory reads
-- **Separable kernel decomposition** — splits a 2-D convolution into two 1-D passes (horizontal then vertical), reducing per-pixel arithmetic from O(K²) to O(2K)
+The three GPU implementations evaluated are:
 
----
+1. **Naive convolution** -- each thread independently loads its full K x K input neighbourhood from global (device) memory. Simple but highly redundant: each input pixel is read up to K^2 times from DRAM.
 
-## Results (RTX 4070 Laptop GPU, 1024×1024 image)
+2. **Shared-memory tiled convolution** -- threads within a block cooperatively load a (TILE + 2r) x (TILE + 2r) apron tile into on-chip shared memory once, then all threads compute exclusively from that fast buffer. Eliminates repeated global reads within a tile.
 
-| Method | r | Time (ms) | GB/s | GFLOP/s | Speedup vs CPU |
-|---|---|---|---|---|---|
-| CPU Reference | 1 | 10.706 | — | 1.76 | 1.00× |
-| Naive GPU | 1 | 0.025 | 341.3 | 768.0 | 435× |
-| Tiled GPU | 1 | 0.035 | 237.4 | 534.3 | 303× |
-| Separable GPU | 1 | 0.042 | 198.8 | 298.3 | 253× |
-| CPU Reference | 7 | 184.220 | — | 2.56 | 1.00× |
-| Naive GPU | 7 | 0.367 | 22.9 | 1285.4 | 501× |
-| Tiled GPU | 7 | 0.228 | 36.8 | 2068.2 | 807× |
-| Separable GPU | 7 | 0.063 | 133.6 | 1002.3 | **2934×** |
-| CPU Reference | 15 | 779.465 | — | 2.59 | 1.00× |
-| Naive GPU | 15 | 1.495 | 5.6 | 1348.1 | 521× |
-| Tiled GPU | 15 | 0.927 | 9.1 | 2174.3 | 840× |
-| Separable GPU | 15 | 0.092 | 90.9 | 1409.3 | **8448×** |
+3. **Separable convolution** -- exploits the separability of the Gaussian kernel to decompose the 2-D convolution into two sequential 1-D passes (horizontal then vertical), each independently tiled in shared memory. Reduces per-pixel arithmetic from O(K^2) to O(2K).
 
-> All GPU results verified correct (max absolute error < 10⁻³ vs CPU reference).
+A CPU single-threaded reference implementation is included for correctness verification and baseline comparison.
 
 ---
 
-## Sample Output
+## Problem and Motivation
+
+Discrete 2-D convolution is central to image processing (Gaussian blur, edge detection, sharpening) and to convolutional neural networks. For an H x W image with a K x K kernel (K = 2r + 1), the naive computation cost is O(H * W * K^2). On a GPU, a naive implementation that reads all input data from global memory suffers from severe memory bandwidth inefficiency.
+
+The arithmetic intensity (AI) of the naive kernel is:
 
 ```
-CUDA Image Convolution Benchmark
-Shared Memory Tiling and Separable Kernels
-
-GPU : NVIDIA GeForce RTX 4070 Laptop GPU
-SMs : 36   Peak BW: 256.0 GB/s   Shared mem: 48 KB
-
---- 1024 x 1024 (1048576 pixels) ---
-Method            r     Err        ms      GB/s     GFLOP/s    Spdup
-CPU Reference      1       -    10.706    0.0000        1.76     1.00x
-Naive GPU          1  3.6e-07     0.025   341.333      768.00   435.62x  OK
-Tiled GPU          1  3.6e-07     0.035   237.449      534.26   303.04x  OK
-Separable GPU      1  3.6e-07     0.042   198.835      298.25   253.76x  OK
-  AI(2D)=2.2  AI(Sep)=1.5  Tiled 0.70x over Naive
-
-CPU Reference     15       -   779.465    0.0000        2.59     1.00x
-Naive GPU         15  3.6e-07     1.495     5.611     1348.13   521.40x  OK
-Tiled GPU         15  3.6e-07     0.927     9.050     2174.25   840.91x  OK
-Separable GPU     15  3.2e-06     0.092    90.921     1409.28  8448.35x  OK
-  AI(2D)=240.2  AI(Sep)=15.5  Tiled 1.61x over Naive
+AI = 2 * K^2 / (2 * 4)  FLOP/byte
 ```
+
+For r = 1 (K = 3): AI = 2.25 FLOP/byte, far below the ridge point of the RTX 4070 Laptop GPU (~58 FLOP/byte). The naive kernel is strongly memory-bandwidth bound at small kernel sizes, and wastes bandwidth at large kernel sizes due to redundant global loads.
+
+Shared-memory tiling and separable decomposition address this inefficiency in complementary ways. Tiling reduces global memory traffic by reusing loaded data within a block. Separable decomposition reduces arithmetic work by factoring the 2-D kernel into 1-D passes.
 
 ---
 
-## Project Structure
+## Repository Structure
 
 ```
 cuda-conv-optimizer/
-├── include/
-│   └── convolution.h       # constants, error macro, function prototypes
 ├── src/
-│   ├── main.cu             # benchmark driver, CPU reference, timing
-│   ├── naive_conv.cu       # baseline: each thread reads from global memory
-│   ├── tiled_conv.cu       # optimisation 1: shared-memory tiling
-│   └── separable_conv.cu   # optimisation 2: two-pass separable pipeline
-├── report/
-│   ├── Final_Report.docx   # full project report
-│   └── Final_Report.pdf
-└── Makefile
+│   ├── main.cu             driver, CPU reference, Gaussian kernel generator, benchmark harness
+│   ├── naive_conv.cu       naive global-memory CUDA kernel
+│   ├── tiled_conv.cu       shared-memory tiled CUDA kernel
+│   └── separable_conv.cu   two-pass separable CUDA kernel (horizontal + vertical)
+├── include/
+│   └── convolution.h       constants (TILE_W, TILE_H, MAX_KERNEL_SIZE), CUDA_CHECK macro, prototypes
+├── Makefile
+├── conv_bench              compiled benchmark binary (RTX 4070 Laptop, CUDA 12.4)
+└── Final_Report.pdf        full project report
 ```
 
 ---
 
-## Requirements
+## Build and Run
 
-- NVIDIA GPU (Compute Capability ≥ 6.0)
-- CUDA Toolkit 11.6+
-- GCC / G++ 9+
-- GNU Make
+**Requirements:**
+- NVIDIA GPU, Compute Capability 6.0 or higher
+- CUDA Toolkit 12.x (tested with 12.4)
+- GCC and GNU Make
 
-Check your GPU's compute capability:
+**Build:**
 ```bash
-nvidia-smi --query-gpu=name,compute_cap --format=csv,noheader
-```
-
----
-
-## Build
-
-```bash
-# Auto-detect GPU architecture (CUDA >= 11.6)
 make
-
-# Or specify manually
-make ARCH=sm_89   # RTX 40xx (Ada Lovelace)
-make ARCH=sm_86   # RTX 30xx (Ampere)
-make ARCH=sm_75   # RTX 20xx (Turing)
-make ARCH=sm_70   # V100 (Volta)
 ```
 
----
-
-## Run
-
+For a specific GPU architecture:
 ```bash
-# Full benchmark — 4 resolutions × 4 kernel radii
+make ARCH=sm_89    # Ada Lovelace (RTX 40xx)
+make ARCH=sm_86    # Ampere (RTX 30xx)
+make ARCH=sm_75    # Turing (RTX 20xx)
+```
+
+**Run full benchmark (4 resolutions x 4 kernel radii):**
+```bash
 make run
+```
 
-# Quick 512×512 test
+**Quick test (512x512):**
+```bash
 make quick
+```
 
-# Custom resolution
+**Custom resolution:**
+```bash
 ./conv_bench 1920 1080
 ```
 
 ---
 
-## Key Findings
+## Kernel Design
 
-- For **small kernels (r=1)**, the naive GPU is faster than tiled — the shared-memory load overhead outweighs the benefit at only 9 unique data reuses per pixel
-- For **r ≥ 3**, tiled consistently beats naive (1.3–1.7×)
-- The **separable kernel dominates** for large radii — at r=15, it is ~10× faster than tiled and 8448× faster than the CPU on a 1024×1024 image
-- The tiled 2-D kernel at r=15 is **compute-bound** (AI = 240 FLOP/byte > ridge point), while the separable kernel remains **bandwidth-bound** (AI = 15.5 FLOP/byte) but performs far fewer operations
+### Tile dimensions
+TILE_W = TILE_H = 16 (256 threads per block). Shared memory usage stays under the 48 KB per-block limit even at the maximum tested kernel radius (r = 15): the tiled 2-D kernel uses (16 + 30) x (16 + 30) x 4 = 8,464 bytes per block.
+
+### Constant memory for filter weights
+All kernel coefficients (1-D and 2-D Gaussian) are stored in `__constant__` memory. Since all threads in a warp read the same coefficient at each step of the convolution loop, the constant cache serves these reads as a single broadcast transaction.
+
+### Border handling
+Out-of-bounds input coordinates are clamped to the nearest valid pixel (border-replicate padding), implemented during the shared-memory load phase so the compute phase has no branch divergence.
+
+### Benchmark protocol
+- 3 warmup kernel launches before timing (eliminates JIT and cache cold-start effects)
+- 10 timed launches measured with `cudaEvent_t` (GPU-side timer, ~0.5 us resolution)
+- Reported time is the arithmetic mean of the 10 runs
+- CPU timing uses `clock_gettime(CLOCK_MONOTONIC)`
+- Correctness: each GPU output is checked against the CPU reference; max absolute difference must be below 1e-3
 
 ---
 
-## Tech Stack
+## Results
 
-- CUDA C++ (C++17)
-- NVIDIA constant memory, shared memory, `cudaEvent_t` timing
-- GNU Make
+Hardware: NVIDIA GeForce RTX 4070 Laptop GPU (Ada Lovelace, 36 SMs, 256 GB/s peak BW, 8 GB VRAM), 13th Gen Intel Core i9-13900H, CUDA 12.4, Debian GNU/Linux 13.
+
+All GPU outputs passed the correctness check for every tested configuration.
+
+### 1024 x 1024 image -- representative results
+
+| Method | r | Time (ms) | BW (GB/s) | GFLOP/s | Speedup vs CPU |
+|--------|---|-----------|-----------|---------|----------------|
+| CPU Reference | 1 | 21.037 | - | 0.90 | 1.00x |
+| Naive GPU | 1 | 0.026 | 321.3 | 722.8 | 805.7x |
+| Tiled GPU | 1 | 0.033 | 256.0 | 576.0 | 642.0x |
+| Separable GPU | 1 | 0.101 | 82.7 | 124.1 | 207.5x |
+| CPU Reference | 3 | 74.565 | - | 1.38 | 1.00x |
+| Naive GPU | 3 | 0.092 | 90.8 | 1112.6 | 807.3x |
+| Tiled GPU | 3 | 0.068 | 122.8 | 1504.5 | 1091.7x |
+| Separable GPU | 3 | 0.062 | 134.3 | 470.0 | 1193.7x |
+| CPU Reference | 7 | 321.471 | - | 1.47 | 1.00x |
+| Naive GPU | 7 | 0.369 | 22.7 | 1277.9 | 870.6x |
+| Tiled GPU | 7 | 0.232 | 36.2 | 2035.3 | 1386.7x |
+| Separable GPU | 7 | 0.066 | 127.8 | 958.4 | 4896.9x |
+| CPU Reference | 15 | 1350.456 | - | 1.49 | 1.00x |
+| Naive GPU | 15 | 1.538 | 5.5 | 1310.5 | 878.2x |
+| Tiled GPU | 15 | 0.927 | 9.0 | 2173.8 | 1456.6x |
+| Separable GPU | 15 | 0.118 | 71.2 | 1103.2 | 11457.9x |
+
+### Key observations
+
+**Small kernels (r = 1):** The naive kernel is faster than tiled at small image sizes because the 3x3 neighbourhood has minimal overlap between adjacent threads, so the shared-memory overhead is not justified. Effective bandwidth exceeds the nominal 256 GB/s peak due to L2 cache hits.
+
+**Medium kernels (r = 3, r = 7):** The tiled kernel consistently outperforms naive from r = 3 onwards. At r = 7 on the largest image (2048x2048), tiled is 1.61x faster than naive. The separable kernel achieves 4483x over the CPU reference at this size.
+
+**Large kernels (r = 15):** The separable kernel dominates. On a 2048x2048 image it runs in 0.420 ms versus 3.861 ms for tiled -- a 9.2x difference. The tiled 2-D kernel at r = 15 has arithmetic intensity of 240 FLOP/byte (compute-bound, above the ridge point of ~58 FLOP/byte), while the separable kernel at 15.5 FLOP/byte remains memory-bandwidth bound but does far less arithmetic. The highest recorded speedup was **12826x** over the CPU reference (separable, r = 15, 2048x2048).
 
 ---
 
-## Authors
+## Roofline Analysis
 
-Vasishta Nandipati · Rishit Mathur · Krishiv Kolanu  
-*School of Computer Engineering, MIT Manipal*  
-*Guide: Vidya Kamath, Assistant Professor*
+The arithmetic intensity of each method at each kernel radius:
+
+| Method | r | AI (FLOP/B) | Regime |
+|--------|---|-------------|--------|
+| Naive / Tiled 2-D | 1 | 2.2 | Memory BW bound |
+| Separable | 1 | 1.5 | Memory BW bound |
+| Naive / Tiled 2-D | 3 | 12.2 | Memory BW bound |
+| Separable | 3 | 3.5 | Memory BW bound |
+| Naive / Tiled 2-D | 7 | 56.2 | Compute bound (near ridge) |
+| Separable | 7 | 7.5 | Memory BW bound |
+| Naive / Tiled 2-D | 15 | 240.2 | Compute bound |
+| Separable | 15 | 15.5 | Memory BW bound |
+
+Ridge point for RTX 4070 Laptop GPU: ~58 FLOP/byte (15 TFLOP/s FP32 / 256 GB/s). Separable kernels always remain memory-bandwidth bound, giving them the best wall-clock time for large radii because they perform far fewer multiply-accumulate operations.
+
+---
+
+## References
+
+1. V. Podlozhnyuk, "Image Convolution with CUDA," NVIDIA GPU Computing SDK White Paper, 2007.
+2. D. B. Kirk and W. W. Hwu, "Programming Massively Parallel Processors," 4th ed., Morgan Kaufmann, 2022.
+3. P. Getreuer, "A Survey of Gaussian Convolution Algorithms," Image Processing On Line, vol. 3, pp. 286-310, 2013.
+4. NVIDIA Corporation, "CUDA C++ Programming Guide," Version 12.4, 2024.
+5. S. Williams, A. Waterman, and D. Patterson, "Roofline: An Insightful Visual Performance Model," Commun. ACM, vol. 52, no. 4, pp. 65-76, 2009.

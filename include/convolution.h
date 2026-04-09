@@ -1,7 +1,7 @@
 #pragma once
 #include <cuda_runtime.h>
-#include <cstdio>
-#include <cmath>
+#include <stdio.h>
+#include <math.h>
 
 #define TILE_W 16
 #define TILE_H 16
@@ -19,24 +19,24 @@
         }                                                              \
     } while (0)
 
-void cpuConvolution(const float* input, float* output,
-                    const float* kernel2d,
+void cpuConvolution(const float *input, float *output,
+                    const float *kernel2d,
                     int width, int height, int kernelRadius);
 
-void launchNaiveConvolution(const float* d_in, float* d_out,
-                            const float* d_kernel,
+void launchNaiveConvolution(const float *d_in, float *d_out,
+                            const float *d_kernel,
                             int width, int height, int kernelRadius);
 
-void launchTiledConvolution(const float* d_in, float* d_out,
-                            const float* d_kernel,
+void launchTiledConvolution(const float *d_in, float *d_out,
+                            const float *d_kernel,
                             int width, int height, int kernelRadius);
 
-void launchSeparableConvolution(const float* d_in, float* d_out,
-                                float* d_temp,
-                                const float* h_kernel1d,
+void launchSeparableConvolution(const float *d_in, float *d_out,
+                                float *d_temp,
+                                const float *h_kernel1d,
                                 int width, int height, int kernelRadius);
 
-void generateGaussianKernel(float* kernel2d, float* kernel1d,
+void generateGaussianKernel(float *kernel2d, float *kernel1d,
                              int radius, float sigma);
 
-float maxAbsDiff(const float* a, const float* b, int n);
+float maxAbsDiff(const float *a, const float *b, int n);
