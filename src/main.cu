@@ -1,19 +1,19 @@
-#include <cstdio>
-#include <cstdlib>
-#include <cmath>
-#include <chrono>
-#include <functional>
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+#include <time.h>
 #include <cuda_runtime.h>
 #include "../include/convolution.h"
 
-static const int   WARMUP_RUNS = 3;
-static const int   BENCH_RUNS  = 10;
-static const float TOLERANCE   = 1e-3f;
+#define WARMUP_RUNS 3
+#define BENCH_RUNS  10
+#define TOLERANCE   1e-3f
 
-static void generateTestImage(float* img, int width, int height)
+static void generateTestImage(float *img, int width, int height)
 {
-    for (int r = 0; r < height; ++r) {
-        for (int c = 0; c < width; ++c) {
+    int r, c;
+    for (r = 0; r < height; r++) {
+        for (c = 0; c < width; c++) {
             float v = sinf(r * 0.07f) * cosf(c * 0.05f)
                     + cosf((r + c) * 0.03f)
                     + 0.5f * sinf(r * 0.2f + c * 0.13f);
@@ -22,18 +22,23 @@ static void generateTestImage(float* img, int width, int height)
     }
 }
 
-void cpuConvolution(const float* input, float* output,
-                    const float* kernel2d,
+void cpuConvolution(const float *input, float *output,
+                    const float *kernel2d,
                     int width, int height, int kernelRadius)
 {
     int kSize = 2 * kernelRadius + 1;
-    for (int row = 0; row < height; ++row) {
-        for (int col = 0; col < width; ++col) {
+    int row, col, kr, kc;
+    for (row = 0; row < height; row++) {
+        for (col = 0; col < width; col++) {
             float sum = 0.0f;
-            for (int kr = 0; kr < kSize; ++kr) {
-                for (int kc = 0; kc < kSize; ++kc) {
-                    int r = min(max(row + kr - kernelRadius, 0), height - 1);
-                    int c = min(max(col + kc - kernelRadius, 0), width - 1);
+            for (kr = 0; kr < kSize; kr++) {
+                for (kc = 0; kc < kSize; kc++) {
+                    int r = row + kr - kernelRadius;
+                    int c = col + kc - kernelRadius;
+                    if (r < 0) r = 0;
+                    if (r >= height) r = height - 1;
+                    if (c < 0) c = 0;
+                    if (c >= width) c = width - 1;
                     sum += input[r * width + c] * kernel2d[kr * kSize + kc];
                 }
             }
@@ -42,50 +47,111 @@ void cpuConvolution(const float* input, float* output,
     }
 }
 
-void generateGaussianKernel(float* kernel2d, float* kernel1d, int radius, float sigma)
+void generateGaussianKernel(float *kernel2d, float *kernel1d, int radius, float sigma)
 {
     int kSize = 2 * radius + 1;
     float sum = 0.0f;
-    for (int i = 0; i < kSize; ++i) {
+    int i, j;
+    for (i = 0; i < kSize; i++) {
         float x = (float)(i - radius);
         kernel1d[i] = expf(-(x * x) / (2.0f * sigma * sigma));
         sum += kernel1d[i];
     }
-    for (int i = 0; i < kSize; ++i) kernel1d[i] /= sum;
-
-    for (int i = 0; i < kSize; ++i)
-        for (int j = 0; j < kSize; ++j)
+    for (i = 0; i < kSize; i++) kernel1d[i] /= sum;
+    for (i = 0; i < kSize; i++)
+        for (j = 0; j < kSize; j++)
             kernel2d[i * kSize + j] = kernel1d[i] * kernel1d[j];
 }
 
-float maxAbsDiff(const float* a, const float* b, int n)
+float maxAbsDiff(const float *a, const float *b, int n)
 {
     float mx = 0.0f;
-    for (int i = 0; i < n; ++i) mx = fmaxf(mx, fabsf(a[i] - b[i]));
+    int i;
+    for (i = 0; i < n; i++) {
+        float d = fabsf(a[i] - b[i]);
+        if (d > mx) mx = d;
+    }
     return mx;
 }
 
-static float gpuTimeKernel(std::function<void()> fn,
-                            int warmup = WARMUP_RUNS, int runs = BENCH_RUNS)
+static double getTimeMs(void)
 {
-    for (int i = 0; i < warmup; ++i) { fn(); CUDA_CHECK(cudaDeviceSynchronize()); }
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1000.0 + ts.tv_nsec / 1.0e6;
+}
 
+static float timeNaive(const float *d_in, float *d_out, const float *d_kernel,
+                        int width, int height, int radius)
+{
+    int i;
+    float ms = 0.0f;
     cudaEvent_t t0, t1;
+    for (i = 0; i < WARMUP_RUNS; i++) {
+        launchNaiveConvolution(d_in, d_out, d_kernel, width, height, radius);
+        CUDA_CHECK(cudaDeviceSynchronize());
+    }
     CUDA_CHECK(cudaEventCreate(&t0));
     CUDA_CHECK(cudaEventCreate(&t1));
     CUDA_CHECK(cudaEventRecord(t0));
-    for (int i = 0; i < runs; ++i) fn();
+    for (i = 0; i < BENCH_RUNS; i++)
+        launchNaiveConvolution(d_in, d_out, d_kernel, width, height, radius);
     CUDA_CHECK(cudaEventRecord(t1));
     CUDA_CHECK(cudaEventSynchronize(t1));
-
-    float ms = 0.0f;
     CUDA_CHECK(cudaEventElapsedTime(&ms, t0, t1));
     CUDA_CHECK(cudaEventDestroy(t0));
     CUDA_CHECK(cudaEventDestroy(t1));
-    return ms / (float)runs;
+    return ms / (float)BENCH_RUNS;
 }
 
-static void printGpuInfo()
+static float timeTiled(const float *d_in, float *d_out, const float *d_kernel,
+                        int width, int height, int radius)
+{
+    int i;
+    float ms = 0.0f;
+    cudaEvent_t t0, t1;
+    for (i = 0; i < WARMUP_RUNS; i++) {
+        launchTiledConvolution(d_in, d_out, d_kernel, width, height, radius);
+        CUDA_CHECK(cudaDeviceSynchronize());
+    }
+    CUDA_CHECK(cudaEventCreate(&t0));
+    CUDA_CHECK(cudaEventCreate(&t1));
+    CUDA_CHECK(cudaEventRecord(t0));
+    for (i = 0; i < BENCH_RUNS; i++)
+        launchTiledConvolution(d_in, d_out, d_kernel, width, height, radius);
+    CUDA_CHECK(cudaEventRecord(t1));
+    CUDA_CHECK(cudaEventSynchronize(t1));
+    CUDA_CHECK(cudaEventElapsedTime(&ms, t0, t1));
+    CUDA_CHECK(cudaEventDestroy(t0));
+    CUDA_CHECK(cudaEventDestroy(t1));
+    return ms / (float)BENCH_RUNS;
+}
+
+static float timeSeparable(const float *d_in, float *d_out, float *d_temp,
+                             const float *kernel1d,
+                             int width, int height, int radius)
+{
+    int i;
+    float ms = 0.0f;
+    cudaEvent_t t0, t1;
+    for (i = 0; i < WARMUP_RUNS; i++) {
+        launchSeparableConvolution(d_in, d_out, d_temp, kernel1d, width, height, radius);
+        CUDA_CHECK(cudaDeviceSynchronize());
+    }
+    CUDA_CHECK(cudaEventCreate(&t0));
+    CUDA_CHECK(cudaEventCreate(&t1));
+    CUDA_CHECK(cudaEventRecord(t0));
+    for (i = 0; i < BENCH_RUNS; i++)
+        launchSeparableConvolution(d_in, d_out, d_temp, kernel1d, width, height, radius);
+    CUDA_CHECK(cudaEventRecord(t1));
+    CUDA_CHECK(cudaEventSynchronize(t1));
+    CUDA_CHECK(cudaEventElapsedTime(&ms, t0, t1));
+    CUDA_CHECK(cudaEventDestroy(t0));
+    CUDA_CHECK(cudaEventDestroy(t1));
+    return ms / (float)BENCH_RUNS;
+}
+
+static void printGpuInfo(void)
 {
     int dev = 0;
     cudaDeviceProp p;
@@ -98,41 +164,49 @@ static void printGpuInfo()
            p.sharedMemPerBlock / 1024);
 }
 
-static float ai2D(int radius) {
+static float ai2D(int radius)
+{
     int k = 2 * radius + 1;
     return (float)(2 * k * k) / (2.0f * sizeof(float));
 }
 
-static float aiSep(int radius) {
+static float aiSep(int radius)
+{
     int k = 2 * radius + 1;
     return (float)(4 * k) / (2.0f * sizeof(float));
 }
 
 static void runBenchmark(int width, int height)
 {
+    int radii[4] = {1, 3, 7, 15};
+    int ri;
     size_t nPix  = (size_t)width * height;
     size_t bytes = nPix * sizeof(float);
-    int radii[]  = {1, 3, 7, 15};
 
     printf("--- %d x %d (%zu pixels) ---\n", width, height, nPix);
     printf("%-16s  r  %6s  %8s  %8s  %10s  %7s\n",
            "Method", "Err", "ms", "GB/s", "GFLOP/s", "Spdup");
 
-    float* h_in  = (float*)malloc(bytes);
-    float* h_ref = (float*)malloc(bytes);
-    float* h_out = (float*)malloc(bytes);
+    float *h_in  = (float *)malloc(bytes);
+    float *h_ref = (float *)malloc(bytes);
+    float *h_out = (float *)malloc(bytes);
     generateTestImage(h_in, width, height);
 
     float *d_in, *d_out, *d_temp, *d_kernel2d;
-    CUDA_CHECK(cudaMalloc(&d_in,      bytes));
-    CUDA_CHECK(cudaMalloc(&d_out,     bytes));
-    CUDA_CHECK(cudaMalloc(&d_temp,    bytes));
+    CUDA_CHECK(cudaMalloc(&d_in,       bytes));
+    CUDA_CHECK(cudaMalloc(&d_out,      bytes));
+    CUDA_CHECK(cudaMalloc(&d_temp,     bytes));
     CUDA_CHECK(cudaMalloc(&d_kernel2d, MAX_KERNEL_SIZE * MAX_KERNEL_SIZE * sizeof(float)));
     CUDA_CHECK(cudaMemcpy(d_in, h_in, bytes, cudaMemcpyHostToDevice));
 
-    for (int radius : radii) {
-        int   kSize = 2 * radius + 1;
+    for (ri = 0; ri < 4; ri++) {
+        int radius = radii[ri];
+        int kSize  = 2 * radius + 1;
         float sigma = (float)radius / 2.0f;
+        double t0, t1;
+        float cpuMs, cpuGF, naiveMs, tiledMs, sepMs;
+        float naiveErr, tiledErr, sepErr;
+        double flops2d, flopsSep;
 
         float kernel2d[MAX_KERNEL_SIZE * MAX_KERNEL_SIZE];
         float kernel1d[MAX_KERNEL_SIZE];
@@ -140,22 +214,20 @@ static void runBenchmark(int width, int height)
         CUDA_CHECK(cudaMemcpy(d_kernel2d, kernel2d,
                               kSize * kSize * sizeof(float), cudaMemcpyHostToDevice));
 
-        auto t0 = std::chrono::high_resolution_clock::now();
+        t0 = getTimeMs();
         cpuConvolution(h_in, h_ref, kernel2d, width, height, radius);
-        auto t1 = std::chrono::high_resolution_clock::now();
-        float cpuMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
-        float cpuGF = (2.0f * nPix * kSize * kSize) / (cpuMs * 1e6f);
+        t1 = getTimeMs();
+        cpuMs = (float)(t1 - t0);
+        cpuGF = (2.0f * nPix * kSize * kSize) / (cpuMs * 1e6f);
         printf("%-16s  %2d  %6s  %8.3f  %8.4f  %10.2f  %7.2fx\n",
                "CPU Reference", radius, "-", cpuMs, 0.0f, cpuGF, 1.0f);
 
-        double flops2d  = 2.0 * nPix * kSize * kSize;
-        double flopsSep = 2.0 * nPix * kSize * 2.0;
+        flops2d  = 2.0 * nPix * kSize * kSize;
+        flopsSep = 2.0 * nPix * kSize * 2.0;
 
-        float naiveMs = gpuTimeKernel([&](){
-            launchNaiveConvolution(d_in, d_out, d_kernel2d, width, height, radius);
-        });
+        naiveMs = timeNaive(d_in, d_out, d_kernel2d, width, height, radius);
         CUDA_CHECK(cudaMemcpy(h_out, d_out, bytes, cudaMemcpyDeviceToHost));
-        float naiveErr = maxAbsDiff(h_ref, h_out, (int)nPix);
+        naiveErr = maxAbsDiff(h_ref, h_out, (int)nPix);
         printf("%-16s  %2d  %6.1e  %8.3f  %8.3f  %10.2f  %7.2fx  %s\n",
                "Naive GPU", radius, naiveErr, naiveMs,
                (2.0f * bytes) / (naiveMs * 1e6f),
@@ -163,11 +235,9 @@ static void runBenchmark(int width, int height)
                cpuMs / naiveMs,
                naiveErr < TOLERANCE ? "OK" : "FAIL");
 
-        float tiledMs = gpuTimeKernel([&](){
-            launchTiledConvolution(d_in, d_out, d_kernel2d, width, height, radius);
-        });
+        tiledMs = timeTiled(d_in, d_out, d_kernel2d, width, height, radius);
         CUDA_CHECK(cudaMemcpy(h_out, d_out, bytes, cudaMemcpyDeviceToHost));
-        float tiledErr = maxAbsDiff(h_ref, h_out, (int)nPix);
+        tiledErr = maxAbsDiff(h_ref, h_out, (int)nPix);
         printf("%-16s  %2d  %6.1e  %8.3f  %8.3f  %10.2f  %7.2fx  %s\n",
                "Tiled GPU", radius, tiledErr, tiledMs,
                (2.0f * bytes) / (tiledMs * 1e6f),
@@ -175,11 +245,9 @@ static void runBenchmark(int width, int height)
                cpuMs / tiledMs,
                tiledErr < TOLERANCE ? "OK" : "FAIL");
 
-        float sepMs = gpuTimeKernel([&](){
-            launchSeparableConvolution(d_in, d_out, d_temp, kernel1d, width, height, radius);
-        });
+        sepMs = timeSeparable(d_in, d_out, d_temp, kernel1d, width, height, radius);
         CUDA_CHECK(cudaMemcpy(h_out, d_out, bytes, cudaMemcpyDeviceToHost));
-        float sepErr = maxAbsDiff(h_ref, h_out, (int)nPix);
+        sepErr = maxAbsDiff(h_ref, h_out, (int)nPix);
         printf("%-16s  %2d  %6.1e  %8.3f  %8.3f  %10.2f  %7.2fx  %s\n",
                "Separable GPU", radius, sepErr, sepMs,
                (2.0f * bytes) / (sepMs * 1e6f),
@@ -198,8 +266,11 @@ static void runBenchmark(int width, int height)
     free(h_in); free(h_ref); free(h_out);
 }
 
-int main(int argc, char* argv[])
+int main(int argc, char *argv[])
 {
+    int resolutions[4][2] = { {256,256}, {512,512}, {1024,1024}, {2048,2048} };
+    int i;
+
     printf("CUDA Image Convolution Benchmark\n");
     printf("Shared Memory Tiling and Separable Kernels\n\n");
     printGpuInfo();
@@ -210,8 +281,7 @@ int main(int argc, char* argv[])
         if (W > 0 && H > 0) { runBenchmark(W, H); return 0; }
     }
 
-    int resolutions[][2] = { {256,256}, {512,512}, {1024,1024}, {2048,2048} };
-    for (auto& r : resolutions) runBenchmark(r[0], r[1]);
+    for (i = 0; i < 4; i++) runBenchmark(resolutions[i][0], resolutions[i][1]);
 
     return 0;
 }
