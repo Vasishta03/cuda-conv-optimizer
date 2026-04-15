@@ -1,19 +1,5 @@
 # CUDA Image Convolution Optimizer
 
-**Semester VI Mini-Project -- Parallel Computing and Architecture (PCAP)**
-Manipal Institute of Technology, Manipal
-
-**Team**
-| Name | Reg. No. |
-|------|----------|
-| Vasishta Nandipati | 230962095 |
-| Rishit Mathur | 220962091 |
-| Krishiv Kolanu | 230962023 |
-
-**Guide:** Vidya Kamath, Assistant Professor, School of Computer Engineering
-
----
-
 ## Overview
 
 This project implements and benchmarks three approaches to 2-D image convolution on an NVIDIA GPU using CUDA C, demonstrating how on-chip shared memory and algorithmic decomposition can dramatically reduce memory bandwidth pressure and improve throughput compared to a naive implementation.
